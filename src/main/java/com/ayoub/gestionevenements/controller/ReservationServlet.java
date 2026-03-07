@@ -2,8 +2,10 @@ package com.ayoub.gestionevenements.controller;
 
 import com.ayoub.gestionevenements.model.Ticket;
 import com.ayoub.gestionevenements.model.User;
+import com.ayoub.gestionevenements.dao.UserDAO;
 import com.ayoub.gestionevenements.service.EventService;
 import com.ayoub.gestionevenements.service.TicketService;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -14,6 +16,7 @@ import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 
 @WebServlet("/reserver")
+@RolesAllowed({"PARTICIPANT"})
 public class ReservationServlet extends HttpServlet {
 
     @Inject
@@ -22,6 +25,9 @@ public class ReservationServlet extends HttpServlet {
     @Inject
     private EventService eventService;
 
+    @Inject
+    private UserDAO userDAO;
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
@@ -29,11 +35,18 @@ public class ReservationServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        HttpSession session = req.getSession(false);
-        if (session == null || session.getAttribute("user") == null) {
+        User user = ensureSessionUser(req);
+        if (user == null) {
             resp.sendRedirect(req.getContextPath() + "/auth");
             return;
         }
+
+        if (user.getRole() != User.Role.PARTICIPANT) {
+            forwardWithError(req, resp, "Seuls les participants peuvent reserver.");
+            return;
+        }
+
+        HttpSession session = req.getSession(false);
 
         String csrf = req.getParameter("csrfToken");
         String sessionToken = (String) session.getAttribute("csrfToken");
@@ -51,7 +64,11 @@ public class ReservationServlet extends HttpServlet {
             return;
         }
 
-        User user = (User) session.getAttribute("user");
+        if (ticketService.dejaReserve(eventId, user.getId())) {
+            forwardWithError(req, resp, "Reservation deja faite pour cet evenement.");
+            return;
+        }
+
         Ticket ticket = ticketService.reserverTicket(eventId, user.getId());
         if (ticket == null) {
             forwardWithError(req, resp, "Evenement complet ou indisponible.");
@@ -59,6 +76,34 @@ public class ReservationServlet extends HttpServlet {
         }
 
         resp.sendRedirect(req.getContextPath() + "/mes-billets");
+    }
+
+    private User ensureSessionUser(HttpServletRequest req) {
+        HttpSession session = req.getSession(false);
+        if (session != null) {
+            User existing = (User) session.getAttribute("user");
+            if (existing != null) {
+                return existing;
+            }
+        }
+
+        if (req.getUserPrincipal() == null) {
+            return null;
+        }
+
+        String email = req.getUserPrincipal().getName();
+        User user = userDAO.findByEmail(email);
+        if (user == null) {
+            return null;
+        }
+
+        session = req.getSession(true);
+        session.setAttribute("user", user);
+        session.setAttribute("role", user.getRole());
+        if (session.getAttribute("csrfToken") == null) {
+            session.setAttribute("csrfToken", java.util.UUID.randomUUID().toString());
+        }
+        return user;
     }
 
     private void forwardWithError(HttpServletRequest req, HttpServletResponse resp, String message) throws ServletException, IOException {

@@ -6,9 +6,11 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import jakarta.annotation.security.RolesAllowed;
 import java.io.IOException;
 
 @WebServlet("/logout")
+@RolesAllowed({"PARTICIPANT", "ORGANISATEUR", "ADMIN"})
 public class LogoutServlet extends HttpServlet {
 
     @Override
@@ -28,6 +30,7 @@ public class LogoutServlet extends HttpServlet {
             }
             session.invalidate();
         }
+        req.logout();
         resp.sendRedirect(req.getContextPath() + "/auth");
     }
 }

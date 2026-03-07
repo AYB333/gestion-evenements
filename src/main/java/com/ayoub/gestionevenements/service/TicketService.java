@@ -45,6 +45,28 @@ public class TicketService {
         return ticketDAO.trouverTicketsParParticipant(userId);
     }
 
+    public List<Ticket> trouverTicketsParParticipant(Long userId, Ticket.Status statut, int page, int pageSize) {
+        if (page < 1) {
+            page = 1;
+        }
+        if (pageSize < 1) {
+            pageSize = 10;
+        }
+        int offset = (page - 1) * pageSize;
+        return ticketDAO.trouverTicketsParParticipant(userId, statut, offset, pageSize);
+    }
+
+    public long countTicketsParParticipant(Long userId, Ticket.Status statut) {
+        return ticketDAO.countTicketsParParticipant(userId, statut);
+    }
+
+    public boolean dejaReserve(Long eventId, Long userId) {
+        if (eventId == null || userId == null) {
+            return false;
+        }
+        return ticketDAO.existsForEventAndParticipant(eventId, userId);
+    }
+
     public Ticket reserverTicket(Long eventId, Long userId) {
         if (eventId == null || userId == null) {
             return null;
@@ -67,6 +89,23 @@ public class TicketService {
 
             User participant = em.find(User.class, userId);
             if (participant == null) {
+                tx.rollback();
+                return null;
+            }
+
+            if (participant.getRole() != User.Role.PARTICIPANT) {
+                tx.rollback();
+                return null;
+            }
+
+            if (event.getOrganisateur() != null
+                    && event.getOrganisateur().getUser() != null
+                    && userId.equals(event.getOrganisateur().getUser().getId())) {
+                tx.rollback();
+                return null;
+            }
+
+            if (ticketDAO.existsForEventAndParticipant(eventId, userId)) {
                 tx.rollback();
                 return null;
             }

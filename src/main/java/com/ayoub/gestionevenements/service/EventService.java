@@ -16,6 +16,14 @@ public class EventService {
         return eventDAO.trouverEvenementsPublies();
     }
 
+    public List<Event> findByOrganisateur(Long organisateurId) {
+        return eventDAO.findByOrganisateurId(organisateurId);
+    }
+
+    public List<Event> findByStatus(Event.Status status) {
+        return eventDAO.findByStatus(status);
+    }
+
     public Event findById(Long id) {
         return eventDAO.findById(id);
     }

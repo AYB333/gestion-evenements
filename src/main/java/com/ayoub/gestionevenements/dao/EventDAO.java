@@ -28,6 +28,24 @@ public class EventDAO {
                 .getResultList();
     }
 
+    public List<Event> findByOrganisateurId(Long organisateurId) {
+        if (organisateurId == null) {
+            return List.of();
+        }
+        return em.createQuery("select e from Event e where e.organisateur.id = :orgId order by e.createdAt desc", Event.class)
+                .setParameter("orgId", organisateurId)
+                .getResultList();
+    }
+
+    public List<Event> findByStatus(Event.Status status) {
+        if (status == null) {
+            return List.of();
+        }
+        return em.createQuery("select e from Event e where e.statut = :statut order by e.createdAt desc", Event.class)
+                .setParameter("statut", status)
+                .getResultList();
+    }
+
     public Event update(Event event) {
         return executeInTransaction(() -> em.merge(event));
     }

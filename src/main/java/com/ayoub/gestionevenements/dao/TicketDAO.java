@@ -43,10 +43,56 @@ public class TicketDAO {
 
     public List<Ticket> trouverTicketsParParticipant(Long userId) {
         return em.createQuery(
-                        "select t from Ticket t where t.participant.id = :userId",
+                        "select t from Ticket t join fetch t.event e " +
+                                "where t.participant.id = :userId " +
+                                "order by t.createdAt desc",
                         Ticket.class)
                 .setParameter("userId", userId)
                 .getResultList();
+    }
+
+    public List<Ticket> trouverTicketsParParticipant(Long userId, Ticket.Status statut, int offset, int limit) {
+        StringBuilder jpql = new StringBuilder(
+                "select t from Ticket t join fetch t.event e " +
+                        "where t.participant.id = :userId ");
+        if (statut != null) {
+            jpql.append("and t.statut = :statut ");
+        }
+        jpql.append("order by t.createdAt desc");
+
+        var query = em.createQuery(jpql.toString(), Ticket.class)
+                .setParameter("userId", userId)
+                .setFirstResult(offset)
+                .setMaxResults(limit);
+        if (statut != null) {
+            query.setParameter("statut", statut);
+        }
+        return query.getResultList();
+    }
+
+    public long countTicketsParParticipant(Long userId, Ticket.Status statut) {
+        StringBuilder jpql = new StringBuilder(
+                "select count(t) from Ticket t where t.participant.id = :userId ");
+        if (statut != null) {
+            jpql.append("and t.statut = :statut ");
+        }
+        var query = em.createQuery(jpql.toString(), Long.class)
+                .setParameter("userId", userId);
+        if (statut != null) {
+            query.setParameter("statut", statut);
+        }
+        Long count = query.getSingleResult();
+        return count == null ? 0 : count;
+    }
+
+    public boolean existsForEventAndParticipant(Long eventId, Long userId) {
+        Long count = em.createQuery(
+                        "select count(t) from Ticket t where t.event.id = :eventId and t.participant.id = :userId",
+                        Long.class)
+                .setParameter("eventId", eventId)
+                .setParameter("userId", userId)
+                .getSingleResult();
+        return count != null && count > 0;
     }
 
     private void executeInTransaction(Runnable action) {

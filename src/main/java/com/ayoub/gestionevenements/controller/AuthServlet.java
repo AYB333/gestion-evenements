@@ -1,8 +1,15 @@
 package com.ayoub.gestionevenements.controller;
 
+import com.ayoub.gestionevenements.dao.OrganisateurDAO;
+import com.ayoub.gestionevenements.model.Organisateur;
 import com.ayoub.gestionevenements.model.User;
 import com.ayoub.gestionevenements.service.AuthService;
 import jakarta.inject.Inject;
+import jakarta.security.enterprise.AuthenticationStatus;
+import jakarta.security.enterprise.SecurityContext;
+import jakarta.security.enterprise.authentication.mechanism.http.AuthenticationParameters;
+import jakarta.security.enterprise.credential.Password;
+import jakarta.security.enterprise.credential.UsernamePasswordCredential;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -17,6 +24,12 @@ public class AuthServlet extends HttpServlet {
 
     @Inject
     private AuthService authService;
+
+    @Inject
+    private OrganisateurDAO organisateurDAO;
+
+    @Inject
+    private SecurityContext securityContext;
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -45,6 +58,8 @@ public class AuthServlet extends HttpServlet {
         String email = req.getParameter("email");
         String password = req.getParameter("password");
         String roleParam = req.getParameter("role");
+        String organisationName = req.getParameter("organisationName");
+        String telephone = req.getParameter("telephone");
 
         if (fullName == null || fullName.isBlank()
                 || email == null || email.isBlank()
@@ -60,6 +75,14 @@ public class AuthServlet extends HttpServlet {
         user.setPasswordHash(password);
         user.setRole(resolveRole(roleParam));
 
+        if (user.getRole() == User.Role.ORGANISATEUR) {
+            if (organisationName == null || organisationName.isBlank()) {
+                req.setAttribute("error", "Veuillez saisir le nom de l'organisation.");
+                req.getRequestDispatcher("/register.jsp").forward(req, resp);
+                return;
+            }
+        }
+
         User created = authService.register(user);
         if (created == null) {
             req.setAttribute("error", "Email deja utilise ou donnees invalides.");
@@ -67,9 +90,34 @@ public class AuthServlet extends HttpServlet {
             return;
         }
 
+        if (created.getRole() == User.Role.ORGANISATEUR) {
+            Organisateur organisateur = new Organisateur();
+            organisateur.setUser(created);
+            organisateur.setOrganisationName(organisationName.trim());
+            if (telephone != null && !telephone.isBlank()) {
+                organisateur.setTelephone(telephone.trim());
+            }
+            organisateurDAO.create(organisateur);
+        }
+
+        AuthenticationStatus status = securityContext.authenticate(
+                req,
+                resp,
+                AuthenticationParameters.withParams()
+                        .credential(new UsernamePasswordCredential(email, new Password(password)))
+        );
+
+        if (status == AuthenticationStatus.SEND_CONTINUE) {
+            return;
+        }
+        if (status != AuthenticationStatus.SUCCESS) {
+            req.setAttribute("error", "Impossible de connecter le compte. Merci de reessayer.");
+            req.getRequestDispatcher("/login.jsp").forward(req, resp);
+            return;
+        }
+
         HttpSession session = req.getSession(true);
         setSessionUser(session, created);
-
         resp.sendRedirect(req.getContextPath() + "/events");
     }
 
@@ -79,6 +127,22 @@ public class AuthServlet extends HttpServlet {
 
         if (email == null || email.isBlank() || password == null || password.isBlank()) {
             req.setAttribute("error", "Identifiants invalides.");
+            req.getRequestDispatcher("/login.jsp").forward(req, resp);
+            return;
+        }
+
+        AuthenticationStatus status = securityContext.authenticate(
+                req,
+                resp,
+                AuthenticationParameters.withParams()
+                        .credential(new UsernamePasswordCredential(email, new Password(password)))
+        );
+
+        if (status == AuthenticationStatus.SEND_CONTINUE) {
+            return;
+        }
+        if (status != AuthenticationStatus.SUCCESS) {
+            req.setAttribute("error", "Email ou mot de passe incorrect.");
             req.getRequestDispatcher("/login.jsp").forward(req, resp);
             return;
         }
