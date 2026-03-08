@@ -3,7 +3,6 @@ package com.ayoub.gestionevenements.controller;
 import com.ayoub.gestionevenements.model.Ticket;
 import com.ayoub.gestionevenements.model.User;
 import com.ayoub.gestionevenements.dao.UserDAO;
-import com.ayoub.gestionevenements.service.EventService;
 import com.ayoub.gestionevenements.service.TicketService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -23,9 +22,6 @@ public class ReservationServlet extends HttpServlet {
     private TicketService ticketService;
 
     @Inject
-    private EventService eventService;
-
-    @Inject
     private UserDAO userDAO;
 
     @Override
@@ -42,7 +38,7 @@ public class ReservationServlet extends HttpServlet {
         }
 
         if (user.getRole() != User.Role.PARTICIPANT) {
-            forwardWithError(req, resp, "Seuls les participants peuvent reserver.");
+            redirectWithError(req, resp, "Seuls les participants peuvent reserver.");
             return;
         }
 
@@ -51,7 +47,7 @@ public class ReservationServlet extends HttpServlet {
         String csrf = req.getParameter("csrfToken");
         String sessionToken = (String) session.getAttribute("csrfToken");
         if (sessionToken == null || csrf == null || !sessionToken.equals(csrf)) {
-            forwardWithError(req, resp, "Action non autorisee.");
+            redirectWithError(req, resp, "Action non autorisee.");
             return;
         }
 
@@ -60,18 +56,18 @@ public class ReservationServlet extends HttpServlet {
         try {
             eventId = Long.valueOf(eventIdParam);
         } catch (NumberFormatException ex) {
-            forwardWithError(req, resp, "Evenement invalide.");
+            redirectWithError(req, resp, "Evenement invalide.");
             return;
         }
 
         if (ticketService.dejaReserve(eventId, user.getId())) {
-            forwardWithError(req, resp, "Reservation deja faite pour cet evenement.");
+            redirectWithError(req, resp, "Reservation deja faite pour cet evenement.");
             return;
         }
 
         Ticket ticket = ticketService.reserverTicket(eventId, user.getId());
         if (ticket == null) {
-            forwardWithError(req, resp, "Evenement complet ou indisponible.");
+            redirectWithError(req, resp, "Evenement complet, passe ou indisponible.");
             return;
         }
 
@@ -106,9 +102,9 @@ public class ReservationServlet extends HttpServlet {
         return user;
     }
 
-    private void forwardWithError(HttpServletRequest req, HttpServletResponse resp, String message) throws ServletException, IOException {
-        req.setAttribute("error", message);
-        req.setAttribute("events", eventService.trouverEvenementsPublies());
-        req.getRequestDispatcher("/events.jsp").forward(req, resp);
+    private void redirectWithError(HttpServletRequest req, HttpServletResponse resp, String message) throws IOException {
+        HttpSession session = req.getSession(true);
+        session.setAttribute("flashError", message);
+        resp.sendRedirect(req.getContextPath() + "/events");
     }
 }

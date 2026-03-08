@@ -17,10 +17,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @WebServlet("/auth")
 public class AuthServlet extends HttpServlet {
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PHONE_PATTERN =
+            Pattern.compile("^[0-9+()\\-\\s]{8,20}$");
 
     @Inject
     private AuthService authService;
@@ -69,9 +76,26 @@ public class AuthServlet extends HttpServlet {
             return;
         }
 
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail == null) {
+            req.setAttribute("error", "Adresse email invalide.");
+            req.getRequestDispatcher("/register.jsp").forward(req, resp);
+            return;
+        }
+        if (!isStrongPassword(password)) {
+            req.setAttribute("error", "Mot de passe trop faible: au moins 8 caracteres avec lettre et chiffre.");
+            req.getRequestDispatcher("/register.jsp").forward(req, resp);
+            return;
+        }
+        if (fullName.trim().length() < 3 || fullName.trim().length() > 120) {
+            req.setAttribute("error", "Nom complet invalide.");
+            req.getRequestDispatcher("/register.jsp").forward(req, resp);
+            return;
+        }
+
         User user = new User();
         user.setFullName(fullName.trim());
-        user.setEmail(email.trim());
+        user.setEmail(normalizedEmail);
         user.setPasswordHash(password);
         user.setRole(resolveRole(roleParam));
 
@@ -95,6 +119,11 @@ public class AuthServlet extends HttpServlet {
             organisateur.setUser(created);
             organisateur.setOrganisationName(organisationName.trim());
             if (telephone != null && !telephone.isBlank()) {
+                if (!PHONE_PATTERN.matcher(telephone.trim()).matches()) {
+                    req.setAttribute("error", "Numero de telephone invalide.");
+                    req.getRequestDispatcher("/register.jsp").forward(req, resp);
+                    return;
+                }
                 organisateur.setTelephone(telephone.trim());
             }
             organisateurDAO.create(organisateur);
@@ -104,7 +133,7 @@ public class AuthServlet extends HttpServlet {
                 req,
                 resp,
                 AuthenticationParameters.withParams()
-                        .credential(new UsernamePasswordCredential(email, new Password(password)))
+                        .credential(new UsernamePasswordCredential(normalizedEmail, new Password(password)))
         );
 
         if (status == AuthenticationStatus.SEND_CONTINUE) {
@@ -118,7 +147,7 @@ public class AuthServlet extends HttpServlet {
 
         HttpSession session = req.getSession(true);
         setSessionUser(session, created);
-        resp.sendRedirect(req.getContextPath() + "/events");
+        resp.sendRedirect(req.getContextPath() + resolveHomePath(created));
     }
 
     private void handleLogin(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -131,11 +160,18 @@ public class AuthServlet extends HttpServlet {
             return;
         }
 
+        String normalizedEmail = normalizeEmail(email);
+        if (normalizedEmail == null) {
+            req.setAttribute("error", "Adresse email invalide.");
+            req.getRequestDispatcher("/login.jsp").forward(req, resp);
+            return;
+        }
+
         AuthenticationStatus status = securityContext.authenticate(
                 req,
                 resp,
                 AuthenticationParameters.withParams()
-                        .credential(new UsernamePasswordCredential(email, new Password(password)))
+                        .credential(new UsernamePasswordCredential(normalizedEmail, new Password(password)))
         );
 
         if (status == AuthenticationStatus.SEND_CONTINUE) {
@@ -147,7 +183,7 @@ public class AuthServlet extends HttpServlet {
             return;
         }
 
-        User user = authService.login(email, password);
+        User user = authService.login(normalizedEmail, password);
         if (user == null) {
             req.setAttribute("error", "Email ou mot de passe incorrect.");
             req.getRequestDispatcher("/login.jsp").forward(req, resp);
@@ -157,7 +193,7 @@ public class AuthServlet extends HttpServlet {
         HttpSession session = req.getSession(true);
         setSessionUser(session, user);
 
-        resp.sendRedirect(req.getContextPath() + "/events");
+        resp.sendRedirect(req.getContextPath() + resolveHomePath(user));
     }
 
     private void setSessionUser(HttpSession session, User user) {
@@ -176,5 +212,33 @@ public class AuthServlet extends HttpServlet {
             return User.Role.ORGANISATEUR;
         }
         return User.Role.PARTICIPANT;
+    }
+
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        String normalized = email.trim().toLowerCase(Locale.ROOT);
+        return EMAIL_PATTERN.matcher(normalized).matches() ? normalized : null;
+    }
+
+    private boolean isStrongPassword(String password) {
+        if (password == null || password.length() < 8) {
+            return false;
+        }
+        boolean hasLetter = password.chars().anyMatch(Character::isLetter);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        return hasLetter && hasDigit;
+    }
+
+    private String resolveHomePath(User user) {
+        if (user == null || user.getRole() == null) {
+            return "/events";
+        }
+        return switch (user.getRole()) {
+            case ADMIN -> "/admin/events";
+            case ORGANISATEUR -> "/organisateur/events";
+            case PARTICIPANT -> "/events";
+        };
     }
 }

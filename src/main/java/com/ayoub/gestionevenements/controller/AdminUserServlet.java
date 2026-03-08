@@ -22,15 +22,19 @@ public class AdminUserServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        ensureSessionUser(req);
+        User currentUser = ensureSessionUser(req);
+        HttpSession session = req.getSession(false);
         List<User> users = userDAO.findAll();
         req.setAttribute("users", users);
+        req.setAttribute("currentUserId", currentUser == null ? null : currentUser.getId());
+        req.setAttribute("success", consumeFlash(session, "flashSuccess"));
+        req.setAttribute("error", consumeFlash(session, "flashError"));
         req.getRequestDispatcher("/admin-users.jsp").forward(req, resp);
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        ensureSessionUser(req);
+        User currentUser = ensureSessionUser(req);
 
         HttpSession session = req.getSession(false);
         String csrf = req.getParameter("csrfToken");
@@ -45,29 +49,37 @@ public class AdminUserServlet extends HttpServlet {
             try {
                 Long id = Long.valueOf(idParam);
                 User user = userDAO.findById(id);
-                if (user != null) {
+                if (user == null) {
+                    setFlash(session, "flashError", "Utilisateur introuvable.");
+                } else if (user.getRole() == User.Role.ADMIN
+                        || (currentUser != null && user.getId().equals(currentUser.getId()))) {
+                    setFlash(session, "flashError", "Ce compte est protege.");
+                } else {
                     user.setEnabled(!user.isEnabled());
                     userDAO.update(user);
+                    setFlash(session, "flashSuccess", user.isEnabled() ? "Compte active." : "Compte desactive.");
                 }
             } catch (NumberFormatException ignored) {
-                // ignore
+                setFlash(session, "flashError", "Identifiant utilisateur invalide.");
             }
+        } else {
+            setFlash(session, "flashError", "Action utilisateur invalide.");
         }
 
         resp.sendRedirect(req.getContextPath() + "/admin/users");
     }
 
-    private void ensureSessionUser(HttpServletRequest req) {
+    private User ensureSessionUser(HttpServletRequest req) {
         HttpSession session = req.getSession(false);
         if (session != null && session.getAttribute("user") != null) {
-            return;
+            return (User) session.getAttribute("user");
         }
         if (req.getUserPrincipal() == null) {
-            return;
+            return null;
         }
         User user = userDAO.findByEmail(req.getUserPrincipal().getName());
         if (user == null) {
-            return;
+            return null;
         }
         session = req.getSession(true);
         session.setAttribute("user", user);
@@ -75,5 +87,23 @@ public class AdminUserServlet extends HttpServlet {
         if (session.getAttribute("csrfToken") == null) {
             session.setAttribute("csrfToken", java.util.UUID.randomUUID().toString());
         }
+        return user;
+    }
+
+    private void setFlash(HttpSession session, String key, String message) {
+        if (session != null) {
+            session.setAttribute(key, message);
+        }
+    }
+
+    private String consumeFlash(HttpSession session, String key) {
+        if (session == null) {
+            return null;
+        }
+        String value = (String) session.getAttribute(key);
+        if (value != null) {
+            session.removeAttribute(key);
+        }
+        return value;
     }
 }

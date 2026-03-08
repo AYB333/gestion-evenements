@@ -60,7 +60,11 @@ public class EventDAO {
     }
 
     public List<Event> trouverEvenementsPublies() {
-        return em.createQuery("select e from Event e where e.statut = :statut", Event.class)
+        return em.createQuery(
+                        "select e from Event e " +
+                                "where e.statut = :statut " +
+                                "order by e.dateDebut asc",
+                        Event.class)
                 .setParameter("statut", Event.Status.PUBLIE)
                 .getResultList();
     }

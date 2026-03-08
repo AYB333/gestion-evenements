@@ -8,6 +8,10 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.EntityTransaction;
 import jakarta.persistence.Persistence;
+import java.sql.Driver;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.Enumeration;
 
 @WebListener
 public class AdminSeedListener implements ServletContextListener {
@@ -58,6 +62,28 @@ public class AdminSeedListener implements ServletContextListener {
             if (emf != null) {
                 emf.close();
             }
+        }
+    }
+
+    @Override
+    public void contextDestroyed(ServletContextEvent sce) {
+        ClassLoader appClassLoader = Thread.currentThread().getContextClassLoader();
+        Enumeration<Driver> drivers = DriverManager.getDrivers();
+        while (drivers.hasMoreElements()) {
+            Driver driver = drivers.nextElement();
+            if (driver.getClass().getClassLoader() == appClassLoader) {
+                try {
+                    DriverManager.deregisterDriver(driver);
+                } catch (SQLException ignored) {
+                    // Ignore cleanup failures during undeploy.
+                }
+            }
+        }
+
+        try {
+            com.mysql.cj.jdbc.AbandonedConnectionCleanupThread.checkedShutdown();
+        } catch (RuntimeException ignored) {
+            // Ignore cleanup failures during undeploy.
         }
     }
 }

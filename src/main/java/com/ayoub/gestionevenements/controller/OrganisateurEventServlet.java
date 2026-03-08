@@ -6,6 +6,7 @@ import com.ayoub.gestionevenements.model.Event;
 import com.ayoub.gestionevenements.model.Organisateur;
 import com.ayoub.gestionevenements.model.User;
 import com.ayoub.gestionevenements.service.EventService;
+import com.ayoub.gestionevenements.service.TicketService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.servlet.ServletException;
@@ -17,15 +18,29 @@ import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @WebServlet("/organisateur/events")
 @RolesAllowed({"ORGANISATEUR"})
 public class OrganisateurEventServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final DateTimeFormatter DISPLAY_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final Set<String> ALLOWED_CATEGORIES = Set.of(
+            "Concert", "Conference", "Spectacle", "Festival", "Theatre",
+            "Cinema", "Sport", "Workshop", "Exposition", "Autre"
+    );
+    private static final Set<String> ALLOWED_CITIES = Set.of(
+            "Casablanca", "Rabat", "Marrakech", "Fes", "Tanger",
+            "Agadir", "Oujda", "Kenitra", "Tetouan", "Meknes"
+    );
 
     @Inject
     private EventService eventService;
@@ -36,6 +51,9 @@ public class OrganisateurEventServlet extends HttpServlet {
     @Inject
     private UserDAO userDAO;
 
+    @Inject
+    private TicketService ticketService;
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         User user = ensureSessionUser(req);
@@ -43,6 +61,7 @@ public class OrganisateurEventServlet extends HttpServlet {
             resp.sendRedirect(req.getContextPath() + "/auth");
             return;
         }
+        HttpSession session = req.getSession(false);
 
         Organisateur organisateur = organisateurDAO.findByUserId(user.getId());
         if (organisateur == null) {
@@ -69,12 +88,48 @@ public class OrganisateurEventServlet extends HttpServlet {
             req.setAttribute("editMode", "edit".equalsIgnoreCase(action));
             req.setAttribute("dateDebutValue", toInputValue(event.getDateDebut()));
             req.setAttribute("dateFinValue", toInputValue(event.getDateFin()));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
             req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
             return;
         }
 
         List<Event> events = eventService.findByOrganisateur(organisateur.getId());
+        Map<Long, Long> soldByEvent = new HashMap<>();
+        Map<Long, Long> reservedByEvent = new HashMap<>();
+
+        for (Event event : events) {
+            Long eventId = event.getId();
+            if (eventId == null) {
+                continue;
+            }
+            soldByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.PAYE));
+            reservedByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.RESERVE));
+        }
+
+        long totalEvents = events.size();
+        long publishedCount = events.stream().filter(event -> event.getStatut() == Event.Status.PUBLIE).count();
+        long pendingCount = events.stream().filter(event -> event.getStatut() == Event.Status.EN_ATTENTE).count();
+        long cancelledCount = events.stream().filter(event -> event.getStatut() == Event.Status.ANNULE).count();
+
+        long totalTickets = ticketService.countByOrganisateur(organisateur.getId());
+        long paidTickets = ticketService.countByOrganisateurAndStatus(organisateur.getId(), com.ayoub.gestionevenements.model.Ticket.Status.PAYE);
+        java.math.BigDecimal revenue = ticketService.sumRevenueByOrganisateur(organisateur.getId());
+
         req.setAttribute("events", events);
+        req.setAttribute("totalEvents", totalEvents);
+        req.setAttribute("publishedCount", publishedCount);
+        req.setAttribute("pendingCount", pendingCount);
+        req.setAttribute("cancelledCount", cancelledCount);
+        req.setAttribute("totalTickets", totalTickets);
+        req.setAttribute("paidTickets", paidTickets);
+        req.setAttribute("revenue", revenue);
+        req.setAttribute("soldByEvent", soldByEvent);
+        req.setAttribute("reservedByEvent", reservedByEvent);
+        req.setAttribute("dateDisplayByEvent", buildDateDisplayByEvent(events));
+        req.setAttribute("success", consumeFlash(session, "flashSuccess"));
+        req.setAttribute("error", consumeFlash(session, "flashError"));
         req.getRequestDispatcher("/organisateur-events.jsp").forward(req, resp);
     }
 
@@ -105,6 +160,9 @@ public class OrganisateurEventServlet extends HttpServlet {
             Event event = loadEventForOrganisateur(req, organisateur);
             if (event != null && event.getStatut() != Event.Status.PUBLIE) {
                 eventService.delete(event.getId());
+                setFlash(session, "flashSuccess", "Evenement supprime.");
+            } else {
+                setFlash(session, "flashError", "Suppression impossible pour cet evenement.");
             }
             resp.sendRedirect(req.getContextPath() + "/organisateur/events");
             return;
@@ -132,14 +190,84 @@ public class OrganisateurEventServlet extends HttpServlet {
             req.setAttribute("editMode", editing);
             req.setAttribute("dateDebutValue", toInputValue(dateDebut));
             req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
+            req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
+            return;
+        }
+
+        if (titre.trim().length() > 200 || (description != null && description.trim().length() > 2000)) {
+            req.setAttribute("error", "Titre ou description trop longs.");
+            req.setAttribute("event", event);
+            req.setAttribute("editMode", editing);
+            req.setAttribute("dateDebutValue", toInputValue(dateDebut));
+            req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
+            req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
+            return;
+        }
+
+        String cleanCategorie = categorie.trim();
+        String cleanLieu = lieu.trim();
+        if (!ALLOWED_CATEGORIES.contains(cleanCategorie) || !ALLOWED_CITIES.contains(cleanLieu)) {
+            req.setAttribute("error", "Categorie ou ville invalide.");
+            req.setAttribute("event", event);
+            req.setAttribute("editMode", editing);
+            req.setAttribute("dateDebutValue", toInputValue(dateDebut));
+            req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
+            req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
+            return;
+        }
+
+        if (prix.compareTo(BigDecimal.ZERO) < 0 || capacite <= 0) {
+            req.setAttribute("error", "Prix et capacite doivent etre positifs.");
+            req.setAttribute("event", event);
+            req.setAttribute("editMode", editing);
+            req.setAttribute("dateDebutValue", toInputValue(dateDebut));
+            req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
+            req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
+            return;
+        }
+
+        if (dateFin != null && dateFin.isBefore(dateDebut)) {
+            req.setAttribute("error", "La date de fin doit etre apres la date de debut.");
+            req.setAttribute("event", event);
+            req.setAttribute("editMode", editing);
+            req.setAttribute("dateDebutValue", toInputValue(dateDebut));
+            req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
+            req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
+            return;
+        }
+
+        if (dateDebut.isBefore(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES))) {
+            req.setAttribute("error", "La date de debut doit etre dans le futur.");
+            req.setAttribute("event", event);
+            req.setAttribute("editMode", editing);
+            req.setAttribute("dateDebutValue", toInputValue(dateDebut));
+            req.setAttribute("dateFinValue", toInputValue(dateFin));
+            req.setAttribute("minDateTimeNow", toInputValue(LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES)));
+            req.setAttribute("categories", new LinkedHashSet<>(ALLOWED_CATEGORIES));
+            req.setAttribute("cities", new LinkedHashSet<>(ALLOWED_CITIES));
             req.getRequestDispatcher("/organisateur-event-form.jsp").forward(req, resp);
             return;
         }
 
         event.setTitre(titre.trim());
         event.setDescription(description == null ? null : description.trim());
-        event.setCategorie(categorie.trim());
-        event.setLieu(lieu.trim());
+        event.setCategorie(cleanCategorie);
+        event.setLieu(cleanLieu);
         event.setDateDebut(dateDebut);
         event.setDateFin(dateFin);
         event.setPrix(prix);
@@ -153,8 +281,10 @@ public class OrganisateurEventServlet extends HttpServlet {
 
         if (editing) {
             eventService.update(event);
+            setFlash(session, "flashSuccess", "Evenement mis a jour et renvoye en validation.");
         } else {
             eventService.create(event);
+            setFlash(session, "flashSuccess", "Evenement cree avec succes.");
         }
 
         resp.sendRedirect(req.getContextPath() + "/organisateur/events");
@@ -247,5 +377,33 @@ public class OrganisateurEventServlet extends HttpServlet {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private Map<Long, String> buildDateDisplayByEvent(List<Event> events) {
+        Map<Long, String> display = new HashMap<>();
+        for (Event event : events) {
+            if (event.getId() == null) {
+                continue;
+            }
+            display.put(event.getId(), event.getDateDebut() == null ? "-" : event.getDateDebut().format(DISPLAY_DATE_FORMAT));
+        }
+        return display;
+    }
+
+    private void setFlash(HttpSession session, String key, String message) {
+        if (session != null) {
+            session.setAttribute(key, message);
+        }
+    }
+
+    private String consumeFlash(HttpSession session, String key) {
+        if (session == null) {
+            return null;
+        }
+        String value = (String) session.getAttribute(key);
+        if (value != null) {
+            session.removeAttribute(key);
+        }
+        return value;
     }
 }
