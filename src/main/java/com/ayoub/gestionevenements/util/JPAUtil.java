@@ -22,6 +22,8 @@ public class JPAUtil {
     @Produces
     @RequestScoped
     public EntityManager createEntityManager() {
+        // One EntityManager per request keeps DAO/service code simple while
+        // business methods still control transactions explicitly when needed.
         return emf.createEntityManager();
     }
 

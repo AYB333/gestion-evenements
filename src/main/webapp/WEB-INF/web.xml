@@ -22,4 +22,13 @@
     <servlet-name>jersey-servlet</servlet-name>
     <url-pattern>/api/*</url-pattern>
   </servlet-mapping>
+
+  <session-config>
+    <session-timeout>30</session-timeout>
+    <tracking-mode>COOKIE</tracking-mode>
+  </session-config>
+
+  <cookie-config>
+    <http-only>true</http-only>
+  </cookie-config>
 </web-app>

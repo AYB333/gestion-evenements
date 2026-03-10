@@ -138,7 +138,7 @@
                     </div>
                     <div>
                       <label class="payment-method-card method-card-stripe">
-                        <input class="form-check-input" type="radio" name="methode" value="STRIPE" <c:if test="${paymentMethod == 'STRIPE'}">checked</c:if>>
+                        <input class="form-check-input" type="radio" name="methode" value="STRIPE" <c:if test="${paymentMethod == 'STRIPE'}">checked</c:if> <c:if test="${not stripeEnabled}">disabled</c:if>>
                         <span class="payment-method-head">
                           <span class="payment-method-kicker">03</span>
                           <span class="payment-method-check"></span>
@@ -148,6 +148,12 @@
                       </label>
                     </div>
                   </div>
+
+                  <c:if test="${not stripeEnabled}">
+                    <div class="alert alert-warning border-0 mt-3 mb-0">
+                      Stripe n'est pas configure sur ce serveur. Ajoutez <code>STRIPE_SECRET_KEY</code> pour activer le paiement reel.
+                    </div>
+                  </c:if>
 
                   <div class="row g-3 mb-4">
                     <div class="col-12 payment-method-details <c:if test='${paymentMethod != \"CARTE\"}'>d-none</c:if>" data-payment-method="CARTE">
@@ -188,6 +194,7 @@
                       <div class="card payment-detail-panel">
                         <div class="card-body">
                           <div class="payment-detail-title">Profil Stripe</div>
+                          <div class="small text-secondary mb-3">Vous serez redirige vers la page Stripe securisee pour finaliser le paiement.</div>
                           <label class="form-label">Nom de facturation</label>
                           <input type="text" class="form-control mb-3" name="stripeBillingName" placeholder="Ayoub El Idrissi" value="${fn:escapeXml(param.stripeBillingName)}">
                           <label class="form-label">Email Stripe</label>

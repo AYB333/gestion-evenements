@@ -5,6 +5,7 @@ import com.ayoub.gestionevenements.dao.UserDAO;
 import com.ayoub.gestionevenements.model.Event;
 import com.ayoub.gestionevenements.model.Organisateur;
 import com.ayoub.gestionevenements.model.User;
+import com.ayoub.gestionevenements.service.CsvReportService;
 import com.ayoub.gestionevenements.service.EventService;
 import com.ayoub.gestionevenements.service.TicketService;
 import jakarta.annotation.security.RolesAllowed;
@@ -54,6 +55,9 @@ public class OrganisateurEventServlet extends HttpServlet {
     @Inject
     private TicketService ticketService;
 
+    @Inject
+    private CsvReportService csvReportService;
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         User user = ensureSessionUser(req);
@@ -98,7 +102,9 @@ public class OrganisateurEventServlet extends HttpServlet {
         List<Event> events = eventService.findByOrganisateur(organisateur.getId());
         Map<Long, Long> soldByEvent = new HashMap<>();
         Map<Long, Long> reservedByEvent = new HashMap<>();
+        Map<Long, BigDecimal> revenueByEvent = new HashMap<>();
 
+        // Organizer dashboard values are recomputed from live database data on each request.
         for (Event event : events) {
             Long eventId = event.getId();
             if (eventId == null) {
@@ -106,6 +112,13 @@ public class OrganisateurEventServlet extends HttpServlet {
             }
             soldByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.PAYE));
             reservedByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.RESERVE));
+            revenueByEvent.put(eventId, ticketService.sumRevenueByEvent(eventId));
+        }
+
+        if ("csv".equalsIgnoreCase(req.getParameter("export"))) {
+            sendCsv(resp, "organisateur-evenements.csv",
+                    csvReportService.buildOrganizerEventsReport(events, reservedByEvent, soldByEvent, revenueByEvent));
+            return;
         }
 
         long totalEvents = events.size();
@@ -127,6 +140,9 @@ public class OrganisateurEventServlet extends HttpServlet {
         req.setAttribute("revenue", revenue);
         req.setAttribute("soldByEvent", soldByEvent);
         req.setAttribute("reservedByEvent", reservedByEvent);
+        req.setAttribute("revenueByEvent", revenueByEvent);
+        req.setAttribute("autoRefreshSeconds", 30);
+        req.setAttribute("lastRefreshAt", LocalDateTime.now().format(DISPLAY_DATE_FORMAT));
         req.setAttribute("dateDisplayByEvent", buildDateDisplayByEvent(events));
         req.setAttribute("success", consumeFlash(session, "flashSuccess"));
         req.setAttribute("error", consumeFlash(session, "flashError"));
@@ -273,6 +289,7 @@ public class OrganisateurEventServlet extends HttpServlet {
         event.setPrix(prix);
         event.setCapacite(capacite);
 
+        // Any edit on a published event sends it back to the admin approval queue.
         if (editing && event.getStatut() == Event.Status.PUBLIE) {
             event.setStatut(Event.Status.EN_ATTENTE);
         } else if (!editing && event.getStatut() == null) {
@@ -405,5 +422,11 @@ public class OrganisateurEventServlet extends HttpServlet {
             session.removeAttribute(key);
         }
         return value;
+    }
+
+    private void sendCsv(HttpServletResponse resp, String filename, byte[] content) throws IOException {
+        resp.setContentType("text/csv; charset=UTF-8");
+        resp.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+        resp.getOutputStream().write(content);
     }
 }

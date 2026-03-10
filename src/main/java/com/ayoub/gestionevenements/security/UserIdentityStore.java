@@ -22,6 +22,8 @@ public class UserIdentityStore implements IdentityStore {
 
     @Override
     public CredentialValidationResult validate(Credential credential) {
+        // Called by Jakarta Security during login. We load the user, verify the
+        // password, then return the role that will be used by @RolesAllowed.
         if (!(credential instanceof UsernamePasswordCredential upc)) {
             return CredentialValidationResult.INVALID_RESULT;
         }
@@ -47,6 +49,8 @@ public class UserIdentityStore implements IdentityStore {
         try {
             return passwordHash.verify(rawPassword, user.getPasswordHash());
         } catch (IllegalArgumentException ex) {
+            // Seeded demo accounts may start with a plaintext password. The first
+            // successful login upgrades them transparently to a hashed value.
             String rawString = new String(rawPassword);
             if (!rawString.equals(user.getPasswordHash())) {
                 return false;

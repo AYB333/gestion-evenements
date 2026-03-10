@@ -103,6 +103,10 @@ public class TicketService {
         return ticketDAO.sumRevenueByOrganisateur(organisateurId);
     }
 
+    public java.math.BigDecimal sumRevenueByEvent(Long eventId) {
+        return ticketDAO.sumRevenueByEvent(eventId);
+    }
+
     public List<TicketDAO.EventSalesRow> findTopEventsByPaidTickets(int limit) {
         return ticketDAO.findTopEventsByPaidTickets(limit);
     }
@@ -119,6 +123,8 @@ public class TicketService {
             return null;
         }
 
+        // Lock the event row before touching capacity so concurrent reservations
+        // cannot oversell the last available places.
         EntityTransaction tx = em.getTransaction();
         try {
             tx.begin();
@@ -161,6 +167,19 @@ public class TicketService {
                 return null;
             }
 
+            String organizerEmail = event.getOrganisateur() != null
+                    && event.getOrganisateur().getUser() != null
+                    ? event.getOrganisateur().getUser().getEmail()
+                    : null;
+            String organizerName = event.getOrganisateur() != null
+                    && event.getOrganisateur().getUser() != null
+                    ? event.getOrganisateur().getUser().getFullName()
+                    : null;
+            String participantEmail = participant.getEmail();
+            String participantName = participant.getFullName();
+            String eventTitle = event.getTitre();
+            java.time.LocalDateTime eventDate = event.getDateDebut();
+
             event.setCapacite(event.getCapacite() - 1);
 
             Ticket reusableTicket = ticketDAO.findReusableCancelledTicket(eventId, userId);
@@ -176,6 +195,15 @@ public class TicketService {
                 em.merge(reusableTicket);
                 em.merge(event);
                 tx.commit();
+                ticketEmailService.sendOrganizerReservationNotification(
+                        organizerEmail,
+                        organizerName,
+                        participantEmail,
+                        participantName,
+                        eventTitle,
+                        eventDate,
+                        reusableTicket.getCode(),
+                        reusableTicket.getPrix());
                 return reusableTicket;
             }
 
@@ -189,6 +217,15 @@ public class TicketService {
             em.persist(ticket);
 
             tx.commit();
+            ticketEmailService.sendOrganizerReservationNotification(
+                    organizerEmail,
+                    organizerName,
+                    participantEmail,
+                    participantName,
+                    eventTitle,
+                    eventDate,
+                    ticket.getCode(),
+                    ticket.getPrix());
             return ticket;
         } catch (RuntimeException ex) {
             if (tx.isActive()) {
@@ -203,6 +240,7 @@ public class TicketService {
             return false;
         }
 
+        // Cancellation returns one seat to the event and notifies participant/organizer.
         EntityTransaction tx = em.getTransaction();
         try {
             tx.begin();
@@ -289,6 +327,8 @@ public class TicketService {
             return new TransferResult(false, "Email cible invalide.");
         }
 
+        // The old ticket stays as an audit trail (TRANSFERE) and a fresh ticket
+        // is created for the new participant.
         String normalizedEmail = targetEmail.trim().toLowerCase(Locale.ROOT);
         EntityTransaction tx = em.getTransaction();
         try {

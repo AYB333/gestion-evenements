@@ -9,6 +9,9 @@
     <div class="hero-kicker">Administration</div>
     <div class="page-title">Gestion des utilisateurs</div>
     <div class="page-subtitle">Activez, bloquez et surveillez les comptes de la plateforme.</div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <a class="btn btn-outline-secondary btn-sm" href="${pageContext.request.contextPath}/admin/users?export=csv">Exporter CSV</a>
+    </div>
   </div>
 
   <c:if test="${not empty success}">
@@ -43,7 +46,7 @@
                 <th>Email</th>
                 <th>Role</th>
                 <th>Statut</th>
-                <th class="text-end">Action</th>
+                <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -66,6 +69,7 @@
                       <c:otherwise>
                         <div class="table-actions">
                           <form method="post" action="${pageContext.request.contextPath}/admin/users" class="d-inline">
+                            <input type="hidden" name="action" value="toggle">
                             <input type="hidden" name="id" value="${user.id}">
                             <input type="hidden" name="csrfToken" value="${sessionScope.csrfToken}">
                             <button type="submit" class="btn btn-outline-secondary btn-sm">
@@ -74,6 +78,16 @@
                                 <c:otherwise>Activer</c:otherwise>
                               </c:choose>
                             </button>
+                          </form>
+                          <form method="post" action="${pageContext.request.contextPath}/admin/users" class="d-inline-flex align-items-center gap-2">
+                            <input type="hidden" name="action" value="role">
+                            <input type="hidden" name="id" value="${user.id}">
+                            <input type="hidden" name="csrfToken" value="${sessionScope.csrfToken}">
+                            <select name="role" class="form-select form-select-sm" style="min-width: 11rem;">
+                              <option value="PARTICIPANT" ${user.role == 'PARTICIPANT' ? 'selected' : ''}>Participant</option>
+                              <option value="ORGANISATEUR" ${user.role == 'ORGANISATEUR' ? 'selected' : ''}>Organisateur</option>
+                            </select>
+                            <button type="submit" class="btn btn-outline-secondary btn-sm">Role</button>
                           </form>
                         </div>
                       </c:otherwise>

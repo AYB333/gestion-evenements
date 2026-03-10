@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 
 @ApplicationScoped
 public class TicketEmailService {
@@ -28,10 +29,19 @@ public class TicketEmailService {
             return;
         }
 
-        String qr = qrCodeService.generateBase64("TICKET:" + ticketCode, 260);
+        byte[] qrBytes = qrCodeService.generatePngBytes("TICKET:" + ticketCode, 260);
+        String qr = qrBytes == null ? null : Base64.getEncoder().encodeToString(qrBytes);
         String dateText = eventDate == null ? "-" : DATE_FORMAT.format(eventDate);
         String html = buildHtml(fullName, eventTitle, dateText, ticketCode, montant, methode, qr);
         String subject = "Votre billet - " + eventTitle;
+        if (qrBytes != null) {
+            mailService.sendHtml(
+                    email,
+                    subject,
+                    html,
+                    new MailService.MailAttachment(buildQrFileName(ticketCode), "image/png", qrBytes));
+            return;
+        }
         mailService.sendHtml(email, subject, html);
     }
 
@@ -93,7 +103,7 @@ public class TicketEmailService {
             return;
         }
         String dateText = eventDate == null ? "-" : DATE_FORMAT.format(eventDate);
-        String qr = paid ? qrCodeService.generateBase64("TICKET:" + ticketCode, 260) : null;
+        byte[] qrBytes = paid ? qrCodeService.generatePngBytes("TICKET:" + ticketCode, 260) : null;
         StringBuilder sb = new StringBuilder();
         sb.append("<html><body style='font-family:Arial,sans-serif;background:#0b0f1a;color:#e2e8f0;padding:24px;'>");
         sb.append("<div style='max-width:640px;margin:0 auto;background:#111827;border-radius:16px;padding:24px;'>");
@@ -107,14 +117,20 @@ public class TicketEmailService {
         sb.append("<li><strong>Montant:</strong> ").append(escapeHtml(montant == null ? "-" : montant + " MAD")).append("</li>");
         sb.append("<li><strong>Statut:</strong> ").append(paid ? "Paye" : "Reserve").append("</li>");
         sb.append("</ul>");
-        if (qr != null) {
-            sb.append("<p>QR Code:</p>");
-            sb.append("<img alt='QR Code' style='width:180px;height:180px' src='data:image/png;base64,")
-                    .append(qr)
-                    .append("'>");
+        if (qrBytes != null) {
+            sb.append("<p>Le QR code de votre billet est joint a cet email en piece jointe.</p>");
         }
         sb.append("</div></body></html>");
-        mailService.sendHtml(email, "Billet transfere - " + (eventTitle == null ? "Evenement" : eventTitle), sb.toString());
+        String subject = "Billet transfere - " + (eventTitle == null ? "Evenement" : eventTitle);
+        if (qrBytes != null) {
+            mailService.sendHtml(
+                    email,
+                    subject,
+                    sb.toString(),
+                    new MailService.MailAttachment(buildQrFileName(ticketCode), "image/png", qrBytes));
+            return;
+        }
+        mailService.sendHtml(email, subject, sb.toString());
     }
 
     public void sendOrganizerSaleNotification(String organizerEmail,
@@ -134,6 +150,44 @@ public class TicketEmailService {
                 ticketCode,
                 montant,
                 methode);
+    }
+
+    public void sendOrganizerReservationNotification(String organizerEmail,
+                                                     String organizerName,
+                                                     String participantEmail,
+                                                     String participantName,
+                                                     String eventTitle,
+                                                     LocalDateTime eventDate,
+                                                     String ticketCode,
+                                                     BigDecimal montant) {
+        if (organizerEmail == null || organizerEmail.isBlank()) {
+            return;
+        }
+        String dateText = eventDate == null ? "-" : DATE_FORMAT.format(eventDate);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<html><body style='font-family:Arial,sans-serif;background:#0b0f1a;color:#e2e8f0;padding:24px;'>");
+        sb.append("<div style='max-width:640px;margin:0 auto;background:#111827;border-radius:16px;padding:24px;'>");
+        sb.append("<h2 style='margin-top:0;color:#38bdf8;'>Nouvelle reservation</h2>");
+        sb.append("<p>Bonjour ").append(escapeHtml(organizerName == null ? "Organisateur" : organizerName)).append(",</p>");
+        sb.append("<p>Un participant vient de reserver une place pour votre evenement.</p>");
+        sb.append("<ul>");
+        sb.append("<li><strong>Evenement:</strong> ").append(escapeHtml(eventTitle == null ? "-" : eventTitle)).append("</li>");
+        sb.append("<li><strong>Date:</strong> ").append(escapeHtml(dateText)).append("</li>");
+        sb.append("<li><strong>Participant:</strong> ")
+                .append(escapeHtml(participantName == null || participantName.isBlank() ? participantEmail : participantName))
+                .append("</li>");
+        sb.append("<li><strong>Email participant:</strong> ").append(escapeHtml(participantEmail == null ? "-" : participantEmail)).append("</li>");
+        sb.append("<li><strong>Code billet:</strong> ").append(escapeHtml(ticketCode == null ? "-" : ticketCode)).append("</li>");
+        if (montant != null) {
+            sb.append("<li><strong>Montant reserve:</strong> ").append(escapeHtml(montant + " MAD")).append("</li>");
+        }
+        sb.append("<li><strong>Statut:</strong> Reserve</li>");
+        sb.append("</ul>");
+        sb.append("</div></body></html>");
+        mailService.sendHtml(
+                organizerEmail,
+                "Nouvelle reservation - " + (eventTitle == null ? "Evenement" : eventTitle),
+                sb.toString());
     }
 
     public void sendOrganizerCancellationNotification(String organizerEmail,
@@ -248,6 +302,14 @@ public class TicketEmailService {
         sb.append("</ul>");
         sb.append("</div></body></html>");
         mailService.sendHtml(organizerEmail, title + " - " + (eventTitle == null ? "Evenement" : eventTitle), sb.toString());
+    }
+
+    private String buildQrFileName(String ticketCode) {
+        String normalized = ticketCode == null ? "ticket" : ticketCode.replaceAll("[^a-zA-Z0-9_-]", "");
+        if (normalized.isBlank()) {
+            normalized = "ticket";
+        }
+        return "qr-" + normalized + ".png";
     }
 
     private String escapeHtml(String value) {

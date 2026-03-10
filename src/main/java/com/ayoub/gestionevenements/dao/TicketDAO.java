@@ -181,6 +181,20 @@ public class TicketDAO {
         return sum == null ? java.math.BigDecimal.ZERO : sum;
     }
 
+    public java.math.BigDecimal sumRevenueByEvent(Long eventId) {
+        if (eventId == null) {
+            return java.math.BigDecimal.ZERO;
+        }
+        java.math.BigDecimal sum = em.createQuery(
+                        "select coalesce(sum(t.prix), 0) from Ticket t " +
+                                "where t.event.id = :eventId and t.statut = :statut",
+                        java.math.BigDecimal.class)
+                .setParameter("eventId", eventId)
+                .setParameter("statut", Ticket.Status.PAYE)
+                .getSingleResult();
+        return sum == null ? java.math.BigDecimal.ZERO : sum;
+    }
+
     public List<EventSalesRow> findTopEventsByPaidTickets(int limit) {
         if (limit < 1) {
             limit = 5;

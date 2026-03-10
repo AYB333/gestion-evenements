@@ -28,16 +28,51 @@ public class SecurityHeadersFilter implements Filter {
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
         if (request instanceof HttpServletRequest httpRequest && response instanceof HttpServletResponse httpResponse) {
+            SecurityRuntimeConfig config = SecurityRuntimeConfig.load();
+            if (shouldRedirectToHttps(httpRequest, config)) {
+                httpResponse.setStatus(HttpServletResponse.SC_MOVED_PERMANENTLY);
+                httpResponse.setHeader("Location", buildHttpsUrl(httpRequest, config.httpsPort()));
+                return;
+            }
+
             httpResponse.setHeader("Content-Security-Policy", CSP);
             httpResponse.setHeader("X-Content-Type-Options", "nosniff");
             httpResponse.setHeader("X-Frame-Options", "DENY");
             httpResponse.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
             httpResponse.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
             httpResponse.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-            if (httpRequest.isSecure()) {
+            httpResponse.setHeader("Cache-Control", "no-store");
+            if (isSecureRequest(httpRequest, config)) {
                 httpResponse.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private boolean shouldRedirectToHttps(HttpServletRequest request, SecurityRuntimeConfig config) {
+        return config.forceHttps() && !isSecureRequest(request, config);
+    }
+
+    private boolean isSecureRequest(HttpServletRequest request, SecurityRuntimeConfig config) {
+        if (request.isSecure()) {
+            return true;
+        }
+        if (!config.trustForwardedProto()) {
+            return false;
+        }
+        String forwardedProto = request.getHeader("X-Forwarded-Proto");
+        return forwardedProto != null && "https".equalsIgnoreCase(forwardedProto.trim());
+    }
+
+    private String buildHttpsUrl(HttpServletRequest request, int httpsPort) {
+        StringBuilder target = new StringBuilder("https://").append(request.getServerName());
+        if (httpsPort > 0 && httpsPort != 443) {
+            target.append(':').append(httpsPort);
+        }
+        target.append(request.getRequestURI());
+        if (request.getQueryString() != null && !request.getQueryString().isBlank()) {
+            target.append('?').append(request.getQueryString());
+        }
+        return target.toString();
     }
 }

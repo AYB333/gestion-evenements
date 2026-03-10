@@ -9,6 +9,11 @@
     <div class="hero-kicker">Administration</div>
     <div class="page-title">Validation des evenements</div>
     <div class="page-subtitle">Approuvez ou refusez les demandes en attente.</div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <span class="badge-soft">Auto-refresh 30s</span>
+      <span class="badge-soft">Derniere mise a jour: <c:out value="${lastRefreshAt}" /></span>
+      <a class="btn btn-outline-secondary btn-sm" href="${pageContext.request.contextPath}/admin/events?export=csv">Exporter CSV</a>
+    </div>
   </div>
 
   <c:if test="${not empty success}">

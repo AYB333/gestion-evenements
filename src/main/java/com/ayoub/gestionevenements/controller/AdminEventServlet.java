@@ -3,6 +3,7 @@ package com.ayoub.gestionevenements.controller;
 import com.ayoub.gestionevenements.model.Event;
 import com.ayoub.gestionevenements.model.User;
 import com.ayoub.gestionevenements.dao.UserDAO;
+import com.ayoub.gestionevenements.service.CsvReportService;
 import com.ayoub.gestionevenements.service.EventService;
 import com.ayoub.gestionevenements.service.TicketService;
 import jakarta.annotation.security.RolesAllowed;
@@ -14,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -35,12 +37,33 @@ public class AdminEventServlet extends HttpServlet {
     @Inject
     private TicketService ticketService;
 
+    @Inject
+    private CsvReportService csvReportService;
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         ensureSessionUser(req);
+        // Admin home mixes moderation data (pending events) and global platform KPIs.
         List<Event> pending = eventService.findByStatus(Event.Status.EN_ATTENTE);
         List<Event> published = eventService.findByStatus(Event.Status.PUBLIE);
         List<Event> allEvents = eventService.findAll();
+        Map<Long, Long> reservedByEvent = new HashMap<>();
+        Map<Long, Long> soldByEvent = new HashMap<>();
+        Map<Long, BigDecimal> revenueByEvent = new HashMap<>();
+        for (Event event : allEvents) {
+            Long eventId = event.getId();
+            if (eventId == null) {
+                continue;
+            }
+            reservedByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.RESERVE));
+            soldByEvent.put(eventId, ticketService.countByEventAndStatus(eventId, com.ayoub.gestionevenements.model.Ticket.Status.PAYE));
+            revenueByEvent.put(eventId, ticketService.sumRevenueByEvent(eventId));
+        }
+        if ("csv".equalsIgnoreCase(req.getParameter("export"))) {
+            sendCsv(resp, "admin-evenements.csv",
+                    csvReportService.buildAdminEventsReport(allEvents, reservedByEvent, soldByEvent, revenueByEvent));
+            return;
+        }
         HttpSession session = req.getSession(false);
 
         List<User> users = userDAO.findAll();
@@ -62,6 +85,8 @@ public class AdminEventServlet extends HttpServlet {
         req.setAttribute("totalTickets", totalTickets);
         req.setAttribute("paidTickets", paidTickets);
         req.setAttribute("topEvents", topEvents);
+        req.setAttribute("autoRefreshSeconds", 30);
+        req.setAttribute("lastRefreshAt", LocalDateTime.now().format(DISPLAY_DATE_FORMAT));
         req.setAttribute("dateDisplayByEvent", buildDateDisplayByEvent(pending));
         req.setAttribute("success", consumeFlash(session, "flashSuccess"));
         req.setAttribute("error", consumeFlash(session, "flashError"));
@@ -100,6 +125,7 @@ public class AdminEventServlet extends HttpServlet {
             if (event.getStatut() != Event.Status.EN_ATTENTE) {
                 setFlash(session, "flashError", "Seuls les evenements en attente peuvent etre valides.");
             } else if ("approve".equalsIgnoreCase(action)) {
+                // Approval makes the event visible to participants and to the REST API.
                 event.setStatut(Event.Status.PUBLIE);
                 eventService.update(event);
                 setFlash(session, "flashSuccess", "Evenement approuve.");
@@ -164,5 +190,11 @@ public class AdminEventServlet extends HttpServlet {
             session.removeAttribute(key);
         }
         return value;
+    }
+
+    private void sendCsv(HttpServletResponse resp, String filename, byte[] content) throws IOException {
+        resp.setContentType("text/csv; charset=UTF-8");
+        resp.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+        resp.getOutputStream().write(content);
     }
 }

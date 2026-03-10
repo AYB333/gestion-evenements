@@ -12,4 +12,6 @@ import jakarta.annotation.security.DeclareRoles;
 )
 @DeclareRoles({"PARTICIPANT", "ORGANISATEUR", "ADMIN"})
 public class SecurityConfig {
+    // Central security entry point: protected pages redirect to /auth, then
+    // Jakarta Security sends the user back to the original target after login.
 }

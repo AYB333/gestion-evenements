@@ -16,6 +16,11 @@ import javax.imageio.ImageIO;
 public class QrCodeService {
 
     public String generateBase64(String text, int size) {
+        byte[] png = generatePngBytes(text, size);
+        return png == null ? null : Base64.getEncoder().encodeToString(png);
+    }
+
+    public byte[] generatePngBytes(String text, int size) {
         if (text == null || text.isBlank()) {
             return null;
         }
@@ -26,7 +31,7 @@ public class QrCodeService {
 
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             ImageIO.write(image, "png", outputStream);
-            return Base64.getEncoder().encodeToString(outputStream.toByteArray());
+            return outputStream.toByteArray();
         } catch (WriterException | IOException ex) {
             return null;
         }

@@ -10,8 +10,15 @@
       <div class="hero-kicker">Organisateur</div>
       <div class="page-title">Tableau de bord</div>
       <div class="page-subtitle">Suivez vos evenements, ventes et capacites.</div>
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <span class="badge-soft">Auto-refresh 30s</span>
+        <span class="badge-soft">Derniere mise a jour: <c:out value="${lastRefreshAt}" /></span>
+      </div>
     </div>
-    <a class="btn btn-accent" href="${pageContext.request.contextPath}/organisateur/events?action=new">Nouvel evenement</a>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-secondary" href="${pageContext.request.contextPath}/organisateur/events?export=csv">Exporter CSV</a>
+      <a class="btn btn-accent" href="${pageContext.request.contextPath}/organisateur/events?action=new">Nouvel evenement</a>
+    </div>
   </div>
 
   <div class="row g-4 mb-4">
@@ -83,6 +90,7 @@
                 <th>Statut</th>
                 <th>Reserves</th>
                 <th>Vendus</th>
+                <th>Revenus</th>
                 <th>Capacite</th>
                 <th class="text-end">Actions</th>
               </tr>
@@ -96,6 +104,7 @@
                   <td><span class="badge badge-soft"><c:out value="${event.statut}" /></span></td>
                   <td><c:out value="${empty reservedByEvent[event.id] ? 0 : reservedByEvent[event.id]}" /></td>
                   <td><c:out value="${empty soldByEvent[event.id] ? 0 : soldByEvent[event.id]}" /></td>
+                  <td><c:out value="${empty revenueByEvent[event.id] ? 0 : revenueByEvent[event.id]}" /> MAD</td>
                   <td><span class="value-chip"><c:out value="${event.capacite}" /> places</span></td>
                   <td class="text-end">
                     <div class="table-actions">

@@ -19,6 +19,7 @@ import java.util.Locale;
 @Path("/events")
 @Produces(MediaType.APPLICATION_JSON)
 public class EventResource {
+    // Read-only REST endpoint exposing published events outside the JSP UI.
 
     @GET
     public Response list(@QueryParam("q") String q,

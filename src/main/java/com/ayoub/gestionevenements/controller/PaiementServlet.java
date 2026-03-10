@@ -67,10 +67,25 @@ public class PaiementServlet extends HttpServlet {
             session.setAttribute("csrfToken", UUID.randomUUID().toString());
         }
 
+        String stripeStatus = req.getParameter("stripeStatus");
+        if ("success".equalsIgnoreCase(stripeStatus)) {
+            PaiementService.PaymentResult result =
+                    paiementService.confirmerPaiementStripe(ticketId, user.getId(), req.getParameter("session_id"));
+            if (result.paiement() != null) {
+                session.setAttribute("flashSuccess", "Paiement Stripe confirme.");
+                resp.sendRedirect(req.getContextPath() + "/mes-billets");
+                return;
+            }
+            req.setAttribute("error", result.message());
+        } else if ("cancel".equalsIgnoreCase(stripeStatus)) {
+            req.setAttribute("error", "Paiement Stripe annule.");
+        }
+
         Paiement existing = paiementService.findByTicketId(ticketId);
         req.setAttribute("ticket", ticket);
         req.setAttribute("paiement", existing);
         req.setAttribute("eventDateDisplay", buildEventDateDisplay(ticket));
+        req.setAttribute("stripeEnabled", paiementService.isStripeEnabled());
         req.getRequestDispatcher("/paiement.jsp").forward(req, resp);
     }
 
@@ -82,6 +97,8 @@ public class PaiementServlet extends HttpServlet {
             return;
         }
 
+        // The form changes depending on the selected provider, but the final
+        // payment remains an internal simulation handled by PaiementService.
         HttpSession session = req.getSession(false);
         String csrf = req.getParameter("csrfToken");
         String sessionToken = session == null ? null : (String) session.getAttribute("csrfToken");
@@ -104,6 +121,30 @@ public class PaiementServlet extends HttpServlet {
         String validationError = validatePaymentDetails(req, methode);
         if (validationError != null) {
             forwardWithError(req, resp, validationError);
+            return;
+        }
+
+        if (methode == Paiement.Methode.STRIPE) {
+            String successUrl = buildApplicationBaseUrl(req)
+                    + req.getContextPath()
+                    + "/paiement?ticketId=" + ticketId
+                    + "&stripeStatus=success&session_id={CHECKOUT_SESSION_ID}";
+            String cancelUrl = buildApplicationBaseUrl(req)
+                    + req.getContextPath()
+                    + "/paiement?ticketId=" + ticketId
+                    + "&stripeStatus=cancel";
+            PaiementService.StripeRedirectResult result = paiementService.createStripeCheckout(
+                    ticketId,
+                    user.getId(),
+                    normalizeEmail(req.getParameter("stripeEmail")),
+                    req.getParameter("stripeBillingName"),
+                    successUrl,
+                    cancelUrl);
+            if (!result.success() || result.checkoutUrl() == null) {
+                forwardWithError(req, resp, result.message() == null ? "Session Stripe impossible." : result.message());
+                return;
+            }
+            resp.sendRedirect(result.checkoutUrl());
             return;
         }
 
@@ -196,6 +237,13 @@ public class PaiementServlet extends HttpServlet {
         return EMAIL_PATTERN.matcher(normalized).matches() ? null : "Email Stripe invalide.";
     }
 
+    private String normalizeEmail(String email) {
+        if (email == null) {
+            return null;
+        }
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
     private User ensureSessionUser(HttpServletRequest req) {
         HttpSession session = req.getSession(false);
         if (session != null) {
@@ -233,6 +281,7 @@ public class PaiementServlet extends HttpServlet {
         }
         req.setAttribute("eventDateDisplay", buildEventDateDisplay(ticket));
         req.setAttribute("selectedMethod", req.getParameter("methode"));
+        req.setAttribute("stripeEnabled", paiementService.isStripeEnabled());
         req.getRequestDispatcher("/paiement.jsp").forward(req, resp);
     }
 
@@ -241,5 +290,14 @@ public class PaiementServlet extends HttpServlet {
             return "-";
         }
         return ticket.getEvent().getDateDebut().format(DISPLAY_DATE_FORMAT);
+    }
+
+    private String buildApplicationBaseUrl(HttpServletRequest req) {
+        String scheme = req.getScheme();
+        String serverName = req.getServerName();
+        int port = req.getServerPort();
+        boolean standardPort = ("http".equalsIgnoreCase(scheme) && port == 80)
+                || ("https".equalsIgnoreCase(scheme) && port == 443);
+        return scheme + "://" + serverName + (standardPort ? "" : ":" + port);
     }
 }

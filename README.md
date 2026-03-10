@@ -11,11 +11,20 @@ Copy-Item -Path .\target\gestion-evenements.war -Destination C:\apache-tomcat-11
 
 - Secure authentication and role-based access with Jakarta Security
 - Participant reservation, payment, cancellation, transfer, QR code
-- Organizer dashboard with sales and capacity follow-up
-- Admin dashboard with validation and platform statistics
+- Organizer dashboard with sales, revenue, auto-refresh, CSV export
+- Admin dashboard with validation, platform statistics, CSV export
+- Admin user management with account activation and participant/organizer role changes
 - REST API for events and stats
 - Email notifications via SMTP or local mock fallback
 - Security hardening with CSRF, server-side validation, CSP, HSTS on HTTPS, and security headers
+
+## Reporting and dashboards
+
+- `GET /gestion-evenements/admin/events?export=csv`
+- `GET /gestion-evenements/admin/users?export=csv`
+- `GET /gestion-evenements/organisateur/events?export=csv`
+
+The admin and organizer dashboards auto-refresh every 30 seconds to keep sales and reservation metrics current during a live demo.
 
 ## Payment providers
 
@@ -55,6 +64,17 @@ With no SMTP variables, the app writes mock emails into `%TEMP%\gestion-evenemen
 
 ## HTTPS setup (Tomcat 11)
 
+Project-side support is already implemented:
+
+- `SecurityHeadersFilter` can force HTTPS redirects when `APP_FORCE_HTTPS=true`
+- secure sessions use cookies only with `HttpOnly`
+- HSTS is sent automatically on HTTPS responses
+
+Local Tomcat is now configured with:
+
+- `https://localhost:8443/gestion-evenements/auth`
+- automatic `301` redirect from `http://localhost:8081/gestion-evenements/auth`
+
 1. Create a local keystore:
 
 ```powershell
@@ -86,3 +106,9 @@ https://localhost:8443/gestion-evenements/auth
 ```
 
 On HTTPS requests, the application automatically sends HSTS and additional browser security headers.
+
+Environment variables used by the app-side HTTPS filter:
+
+- `APP_FORCE_HTTPS=true`
+- `APP_HTTPS_PORT=8443`
+- `APP_TRUST_X_FORWARDED_PROTO=true`

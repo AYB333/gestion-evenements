@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.Response;
 @Path("/stats")
 @Produces(MediaType.APPLICATION_JSON)
 public class StatsResource {
+    // Small REST summary used for demos and quick platform checks.
 
     @GET
     public Response overview() {

@@ -37,6 +37,7 @@ public class ReservationServlet extends HttpServlet {
             return;
         }
 
+        // Only participants can book seats. Organizers and admins only manage data.
         if (user.getRole() != User.Role.PARTICIPANT) {
             redirectWithError(req, resp, "Seuls les participants peuvent reserver.");
             return;

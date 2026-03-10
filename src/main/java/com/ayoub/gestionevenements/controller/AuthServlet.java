@@ -52,6 +52,7 @@ public class AuthServlet extends HttpServlet {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         req.setCharacterEncoding("UTF-8");
 
+        // The same /auth endpoint handles both forms: registration and login.
         String action = req.getParameter("action");
         if ("register".equalsIgnoreCase(action)) {
             handleRegister(req, resp);
@@ -99,6 +100,7 @@ public class AuthServlet extends HttpServlet {
         user.setPasswordHash(password);
         user.setRole(resolveRole(roleParam));
 
+        // Organisateur users need extra profile data stored in a dedicated table.
         if (user.getRole() == User.Role.ORGANISATEUR) {
             if (organisationName == null || organisationName.isBlank()) {
                 req.setAttribute("error", "Veuillez saisir le nom de l'organisation.");
@@ -136,6 +138,8 @@ public class AuthServlet extends HttpServlet {
                         .credential(new UsernamePasswordCredential(normalizedEmail, new Password(password)))
         );
 
+        // JSP pages read sessionScope.user/role directly, so we mirror the
+        // authenticated principal into the HTTP session after login/register.
         if (status == AuthenticationStatus.SEND_CONTINUE) {
             return;
         }
@@ -200,6 +204,7 @@ public class AuthServlet extends HttpServlet {
         session.setAttribute("user", user);
         session.setAttribute("role", user.getRole());
         if (session.getAttribute("csrfToken") == null) {
+            // A single session token is reused by all state-changing forms.
             session.setAttribute("csrfToken", UUID.randomUUID().toString());
         }
     }

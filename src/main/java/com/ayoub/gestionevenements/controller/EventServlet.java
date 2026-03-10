@@ -66,6 +66,7 @@ public class EventServlet extends HttpServlet {
 
         List<Event> allEvents = eventService.trouverEvenementsPublies();
 
+        // Normalize filters first so blank values and "ALL" never complicate the view logic.
         String query = req.getParameter("q");
 
         String categoryParam = req.getParameter("category");
@@ -137,6 +138,7 @@ public class EventServlet extends HttpServlet {
         Map<Long, String> reservationStateByEvent = new HashMap<>();
         Map<Long, String> categoryDisplayByEvent = new HashMap<>();
 
+        // These maps keep presentation-only rules out of the JSP page.
         for (Event event : filtered) {
             if (event.getId() == null) {
                 continue;
